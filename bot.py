@@ -2,6 +2,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 
+
 # 🔑 ضع التوكن هنا
 BOT_TOKEN2 = "ضع_توكن_البوت_هنا"
 
