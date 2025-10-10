@@ -1,6 +1,5 @@
 """
-🤖 بوت Telegram لبيع الملفات مع Mini App
-الموقع يفتح داخل Telegram!
+🤖 بوت Telegram لبيع الملفات مع Mini App - Railway Ready
 """
 
 import telebot
@@ -8,14 +7,20 @@ from telebot import types
 import io
 from flask import Flask, render_template_string, request, jsonify
 from threading import Thread
-import secrets
+import os
 
 # ========================================
 # إعدادات البوت
 # ========================================
 
-BOT_TOKEN = "7253548907:AAE3jhMGY5lY-B6lLtouJpqXPs0RepUIF2w"
-WEB_APP_URL = "stor-production.up.railway.app"  # ضع رابط الموقع هنا (لازم HTTPS)
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "7253548907:AAE3jhMGY5lY-B6lLtouJpqXPs0RepUIF2w")
+# Railway يوفر المتغير RAILWAY_PUBLIC_DOMAIN تلقائياً
+WEB_APP_URL = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "stor-production.up.railway.app")
+
+# إضافة https:// إذا لم يكن موجوداً
+if not WEB_APP_URL.startswith('http'):
+    WEB_APP_URL = f"https://{WEB_APP_URL}"
+
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
@@ -85,10 +90,10 @@ FILES = {
 
 PRICE = 999
 stats = {"total_sales": 0, "total_revenue": 0}
-pending_purchases = {}  # {user_id: file_id}
+pending_purchases = {}
 
 # ========================================
-# واجهة الويب HTML - Mini App
+# واجهة الويب HTML
 # ========================================
 
 HTML_TEMPLATE = """
@@ -237,12 +242,6 @@ HTML_TEMPLATE = """
         .buy-button:active {
             opacity: 0.8;
         }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            font-size: 1.2em;
-        }
         
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
@@ -299,12 +298,10 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        // تهيئة Telegram Web App
         let tg = window.Telegram.WebApp;
         tg.expand();
         tg.ready();
 
-        // الحصول على بيانات المستخدم
         const userId = tg.initDataUnsafe?.user?.id;
 
         function buyFile(fileId, fileName) {
@@ -356,7 +353,6 @@ HTML_TEMPLATE = """
             }
         }
 
-        // تخصيص الألوان حسب ثيم Telegram
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#667eea';
     </script>
 </body>
@@ -364,12 +360,17 @@ HTML_TEMPLATE = """
 """
 
 # ========================================
-# واجهة الويب - Flask
+# Flask Routes
 # ========================================
 
 @app.route('/')
 def home():
     return render_template_string(HTML_TEMPLATE, files=FILES, stats=stats)
+
+@app.route('/health')
+def health():
+    """Railway health check endpoint"""
+    return jsonify({'status': 'ok', 'bot': 'running'})
 
 @app.route('/api/purchase', methods=['POST'])
 def api_purchase():
@@ -383,13 +384,11 @@ def api_purchase():
     if file_id not in FILES:
         return jsonify({'success': False, 'message': 'الملف غير موجود!'})
     
-    # حفظ الطلب
     pending_purchases[user_id] = file_id
     
     try:
         file_info = FILES[file_id]
         
-        # إرسال الفاتورة
         bot.send_invoice(
             chat_id=user_id,
             title=file_info['name'],
@@ -415,7 +414,7 @@ def api_purchase():
         })
 
 # ========================================
-# بوت Telegram
+# Bot Handlers
 # ========================================
 
 @bot.message_handler(commands=['start'])
@@ -436,7 +435,6 @@ def start(message):
     )
     markup.row(web_app_btn)
     
-    # زر إضافي للشراء المباشر
     direct_btn = types.KeyboardButton(text="📱 الشراء المباشر")
     markup.row(direct_btn)
     
@@ -501,7 +499,6 @@ def checkout(pre_checkout_query):
 def got_payment(message):
     payload = message.successful_payment.invoice_payload
     
-    # استخراج file_id من payload
     if payload.startswith('webapp_purchase_'):
         file_id = payload.replace('webapp_purchase_', '')
     elif payload.startswith('direct_'):
@@ -513,7 +510,6 @@ def got_payment(message):
     if file_id in FILES:
         file_info = FILES[file_id]
         
-        # تحديث الإحصائيات
         stats['total_sales'] += 1
         stats['total_revenue'] += PRICE
         
@@ -527,7 +523,6 @@ def got_payment(message):
         
         bot.send_message(message.chat.id, success_text, parse_mode='Markdown')
         
-        # إرسال الملف
         file_content = file_info['content'].encode('utf-8')
         file_obj = io.BytesIO(file_content)
         file_obj.name = file_info['name']
@@ -558,58 +553,31 @@ def help_command(message):
     bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
 
 # ========================================
-# تشغيل البوت والويب معاً
+# تشغيل التطبيق
 # ========================================
 
 def run_bot():
+    """تشغيل البوت في thread منفصل"""
     print("🤖 البوت يعمل الآن...")
-    bot.infinity_polling()
-
-def run_web():
-    print("🌐 الموقع يعمل على: http://localhost:5000")
-    print("⚠️  ملاحظة: للاستخدام الفعلي، يجب رفع الموقع على HTTPS")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"خطأ في البوت: {e}")
+            import time
+            time.sleep(15)
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("🚀 بدء تشغيل البوت والموقع...")
+    print("🚀 بدء تشغيل التطبيق على Railway...")
+    print(f"🌐 Web App URL: {WEB_APP_URL}")
     print("=" * 50)
     
+    # تشغيل البوت في thread منفصل
     bot_thread = Thread(target=run_bot)
     bot_thread.daemon = True
     bot_thread.start()
     
-    run_web()
-
-# ========================================
-# ملاحظات التشغيل
-# ========================================
-
-"""
-✨ الآن مع Telegram Mini App:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. ✅ زر "تصفح المتجر" يفتح الموقع داخل Telegram
-2. ✅ تصميم مناسب لـ Telegram (يتبع ثيم التطبيق)
-3. ✅ التفاعل مع Telegram Web App API
-4. ✅ تجربة سلسة ومتكاملة
-
-📦 التثبيت:
-pip install pytelegrambotapi flask
-
-🔧 الإعداد المهم:
-1. ضع BOT_TOKEN
-2. ضع WEB_APP_URL (لازم يكون HTTPS)
-3. للتجربة المحلية استخدم ngrok:
-   ngrok http 5000
-   ثم ضع الرابط في WEB_APP_URL
-
-⚠️  ملاحظة مهمة:
-Telegram Web Apps تشتغل فقط مع HTTPS!
-للتطوير المحلي استخدم:
-- ngrok
-- localtunnel
-- أو أي خدمة tunneling
-
-🚀 التشغيل:
-python bot.py
-"""
+    # تشغيل Flask
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
