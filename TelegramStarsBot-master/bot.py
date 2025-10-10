@@ -15,7 +15,7 @@ import secrets
 # ========================================
 
 BOT_TOKEN = "7253548907:AAE3jhMGY5lY-B6lLtouJpqXPs0RepUIF2w"
-WEB_APP_URL = "http://localhost:5000/"  # ضع رابط الموقع هنا (لازم HTTPS)
+WEB_APP_URL = "stor-production.up.railway.app"  # ضع رابط الموقع هنا (لازم HTTPS)
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
